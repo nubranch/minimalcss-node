@@ -141,75 +141,80 @@ const processStylesheet = ({
   stylesheetAsts,
   stylesheetContents,
 }) => {
-  const ast = csstree.parse(text);
+  let cssText = text;
 
-  csstree.walk(ast, (node) => {
-    if (node.type !== 'Url') return;
+  // Base URL for resolving relative paths in this stylesheet
+  let cssBaseUrl;
+  let pageOrigin;
+  try {
+    cssBaseUrl = new url.URL(responseUrl, pageUrl);
+    pageOrigin = new url.URL(pageUrl).origin;
+  } catch (e) {
+    // If we somehow can't construct URLs, just parse as-is
+    const ast = csstree.parse(cssText);
+    stylesheetAsts[responseUrl] = ast;
+    stylesheetContents[responseUrl] = cssText;
+    return;
+  }
 
-    const value = node.value;
+  // Rewrite url(...) paths in the raw CSS before we hand it to csstree
+  cssText = cssText.replace(
+    /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,
+    (match, quote = '', path = '') => {
+      const originalPath = path;
 
-    // Defensive: some Url nodes may not have a usable value
-    if (!value || typeof value.value !== 'string') {
-      return;
-    }
-
-    const originalRaw = value.value;
-    // Strip surrounding quotes if present: "foo" → foo, 'foo' → foo
-    let path = originalRaw.replace(/^['"]|['"]$/g, '');
-
-    // Quick exits for URLs we should not touch
-    if (
-      /^https?:\/\//i.test(path) || // absolute http/https
-      /^\/\//.test(path) ||         // protocol-relative
-      /^data:/i.test(path)          // data URIs
-    ) {
-      return;
-    }
-
-    let finalPath = path;
-
-    try {
-      // Base URL is the stylesheet's response URL
-      const cssUrl = new url.URL(responseUrl, pageUrl);
-      const pageOrigin = new url.URL(pageUrl).origin;
-
-      // Resolve the (possibly relative) path against the stylesheet URL
-      const resolved = new url.URL(path, cssUrl);
-
-      if (resolved.origin === pageOrigin) {
-        // Same origin as the page → make it root-absolute; this way it
-        // still works even if the final CSS is served from a different path.
-        finalPath = resolved.pathname + resolved.search;
-      } else {
-        // Different origin (CDN etc) → keep full absolute URL
-        finalPath = resolved.href;
+      // Skip empty or obviously invalid paths
+      if (!path) {
+        return match;
       }
-    } catch (e) {
-      // If resolution fails for some weird value, leave it alone
-      return;
-    }
 
-    // DEBUG: log Flaticon URL rewrites
-    if (finalPath.includes('Flaticon')) {
-      console.log('Rewriting Flaticon URL:', {
-        pageUrl,
-        responseUrl,
-        original: originalRaw,
-        final: finalPath,
-      });
-    }
+      // Don’t touch absolute URLs or data URIs
+      if (
+        /^https?:\/\//i.test(path) || // http/https
+        /^\/\//.test(path) ||         // protocol-relative
+        /^data:/i.test(path)          // data: URI
+      ) {
+        return match;
+      }
 
-    // Write back, re-quoting if the node is not Raw
-    if (value.type !== 'Raw') {
-      value.value = `"${finalPath}"`;
-    } else {
-      value.value = finalPath;
-    }
-  });
+      let finalPath = path;
+      try {
+        const resolved = new url.URL(path, cssBaseUrl);
 
+        if (resolved.origin === pageOrigin) {
+          // Same origin: use root-absolute so it works regardless of
+          // where the final CSS file is stored
+          finalPath = resolved.pathname + resolved.search;
+        } else {
+          // Different origin: keep full absolute URL
+          finalPath = resolved.href;
+        }
+      } catch (e) {
+        // On any resolution error, keep the original
+        return match;
+      }
+
+      // Debug specific to Flaticon so we can see it actually happening
+      if (finalPath.includes('Flaticon')) {
+        console.log('Rewriting Flaticon URL (regex):', {
+          responseUrl,
+          original: originalPath,
+          final: finalPath,
+        });
+      }
+
+      // Preserve quoting style if there was one
+      const q = quote || '';
+      return `url(${q}${finalPath}${q})`;
+    }
+  );
+
+  // Now parse the already-fixed CSS into an AST and store it
+  const ast = csstree.parse(cssText);
   stylesheetAsts[responseUrl] = ast;
-  stylesheetContents[responseUrl] = text;
+  stylesheetContents[responseUrl] = cssText;
 };
+
 
 
 const processPage = ({
