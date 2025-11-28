@@ -133,7 +133,7 @@ const postProcessOptimize = (ast) => {
   });
 };
 
-const processStylesheet = ({
+processStylesheet = ({
   text,
   pageUrl,
   responseUrl,
@@ -152,46 +152,44 @@ const processStylesheet = ({
       return;
     }
 
-    let path = value.value;
+    const originalRaw = value.value;
+    // Strip surrounding quotes if present: "foo" → foo, 'foo' → foo
+    let path = originalRaw.replace(/^['"]|['"]$/g, '');
 
-    // If it's a quoted URL, remove the quotes for processing
-    if (value.type !== 'Raw' && path.length >= 2) {
-      path = path.slice(1, -1);
-    }
-
-    const sameHost = url.parse(responseUrl).host === url.parse(pageUrl).host;
-
-    // 1) Already absolute or data/blob → leave as-is
-    if (/^https?:\/\/|^\/\/|^data:/i.test(path)) {
+    // Quick exits for URLs we should not touch
+    if (/^https?:\/\//i.test(path) || /^\/\//.test(path) || /^data:/i.test(path)) {
+      // Already absolute or data URI – leave as is
       return;
     }
 
-    // 2) Root-relative on same host → keep exactly as-is
-    if (/^\//.test(path) && sameHost) {
-      return;
-    }
+    let finalPath = path;
 
-    // 3) Anything else: resolve relative to the stylesheet URL
     try {
-      const resolved = new url.URL(path, responseUrl);
+      // Base URL is the stylesheet's response URL
+      const cssUrl = new url.URL(responseUrl, pageUrl);
+      const pageOrigin = new url.URL(pageUrl).origin;
 
-      if (sameHost) {
-        // Make it root-absolute so it works no matter where the final CSS lives
-        path = resolved.pathname + resolved.search;
-      } else {
-        // Different host: keep full absolute URL
-        path = resolved.href;
-      }
+      // Resolve the (possibly relative) path against the stylesheet URL
+      const resolved = new url.URL(path, cssUrl);
 
-      // Re-apply quoting if it was originally a String node
-      if (value.type !== 'Raw') {
-        value.value = `"${path}"`;
+      if (resolved.origin === pageOrigin) {
+        // Same origin as the page → make it root-absolute; this way it
+        // still works even if the final CSS is served from a different path.
+        finalPath = resolved.pathname + resolved.search;
       } else {
-        value.value = path;
+        // Different origin (CDN etc) → keep full absolute URL
+        finalPath = resolved.href;
       }
     } catch (e) {
-      // If URL resolution fails for some weird value, best effort: leave it alone
-      // (optional: log when options.debug is enabled)
+      // If resolution fails for some weird value, best effort: leave it alone
+      return;
+    }
+
+    // Write back, re-quoting if the node is not Raw
+    if (value.type !== 'Raw') {
+      value.value = `"${finalPath}"`;
+    } else {
+      value.value = finalPath;
     }
   });
 
