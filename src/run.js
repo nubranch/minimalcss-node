@@ -194,15 +194,6 @@ const processStylesheet = ({
         return match;
       }
 
-      // Debug specific to Flaticon so we can see it actually happening
-      if (finalPath.includes('Flaticon')) {
-        console.log('Rewriting Flaticon URL (regex):', {
-          responseUrl,
-          original: originalPath,
-          final: finalPath,
-        });
-      }
-
       // Preserve quoting style if there was one
       const q = quote || '';
       return `url(${q}${finalPath}${q})`;
@@ -367,11 +358,6 @@ const processPage = ({
 
         if (!looksLikeCSS) {
           return;
-        }
-
-        // DEBUG: see exactly which CSS files we process
-        if (responseUrl.includes('flaticon')) {
-          console.log('Processing CSS for Flaticon:', responseUrl);
         }
 
         response.text().then((text) => {
