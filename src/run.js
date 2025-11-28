@@ -117,12 +117,23 @@ const processStylesheet = ({
   const ast = csstree.parse(text);
   csstree.walk(ast, (node) => {
     if (node.type !== 'Url') return;
+
     const value = node.value;
-    let path = value.value;
-    if (value.type !== 'Raw') {
-      path = path.substr(1, path.length - 2);
+
+    // Defensive: some Url nodes may not have a usable value
+    if (!value || typeof value.value !== 'string') {
+      return; // skip this URL node
     }
+
+    let path = value.value;
+
+    // Strip quotes only if they exist and the string is long enough
+    if (value.type !== 'Raw' && path.length >= 2) {
+      path = path.slice(1, -1); // equivalent to substr(1, path.length - 2)
+    }
+
     const sameHost = url.parse(responseUrl).host === url.parse(pageUrl).host;
+
     if (/^https?:\/\/|^\/\/|^data:/i.test(path)) {
       // do nothing
     } else if (/^\//.test(path) && sameHost) {
