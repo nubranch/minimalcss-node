@@ -141,6 +141,7 @@ const processStylesheet = ({
   stylesheetContents,
 }) => {
   const ast = csstree.parse(text);
+
   csstree.walk(ast, (node) => {
     if (node.type !== 'Url') return;
 
@@ -148,39 +149,56 @@ const processStylesheet = ({
 
     // Defensive: some Url nodes may not have a usable value
     if (!value || typeof value.value !== 'string') {
-      return; // skip this URL node
+      return;
     }
 
     let path = value.value;
 
-    // Strip quotes only if they exist and the string is long enough
+    // If it's a quoted URL, remove the quotes for processing
     if (value.type !== 'Raw' && path.length >= 2) {
-      path = path.slice(1, -1); // equivalent to substr(1, path.length - 2)
+      path = path.slice(1, -1);
     }
 
     const sameHost = url.parse(responseUrl).host === url.parse(pageUrl).host;
 
+    // 1) Already absolute or data/blob → leave as-is
     if (/^https?:\/\/|^\/\/|^data:/i.test(path)) {
-      // do nothing
-    } else if (/^\//.test(path) && sameHost) {
-      // do nothing
-    } else {
+      return;
+    }
+
+    // 2) Root-relative on same host → keep exactly as-is
+    if (/^\//.test(path) && sameHost) {
+      return;
+    }
+
+    // 3) Anything else: resolve relative to the stylesheet URL
+    try {
       const resolved = new url.URL(path, responseUrl);
+
       if (sameHost) {
+        // Make it root-absolute so it works no matter where the final CSS lives
         path = resolved.pathname + resolved.search;
       } else {
+        // Different host: keep full absolute URL
         path = resolved.href;
       }
+
+      // Re-apply quoting if it was originally a String node
       if (value.type !== 'Raw') {
         value.value = `"${path}"`;
       } else {
         value.value = path;
       }
+    } catch (e) {
+      // If URL resolution fails for some weird value, best effort: leave it alone
+      // (optional: log when options.debug is enabled)
     }
   });
+
   stylesheetAsts[responseUrl] = ast;
   stylesheetContents[responseUrl] = text;
 };
+
 
 const processPage = ({
   page,

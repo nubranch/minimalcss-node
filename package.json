@@ -1,6 +1,6 @@
 {
   "name": "minimalcss-wp",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Extract the minimal CSS used in a set of URLs with puppeteer",
   "main": "./index.js",
   "author": "Peter Bengtsson",
