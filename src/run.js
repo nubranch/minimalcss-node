@@ -622,6 +622,8 @@ const minimalcss = async (options) => {
             throw new Error(cssErrorMessage);
           }
         } else {
+          let hasSelectors = false;
+
           node.prelude.children.forEach((node, item, list) => {
             // Translate selector's AST to a string and filter pseudos from it
             // This changes things like `a.button:active` to `a.button`
@@ -670,10 +672,12 @@ const minimalcss = async (options) => {
             if (!decisionsCache[selectorString]) {
               // delete selector from a list of selectors
               list.remove(item);
+            } else {
+              hasSelectors = true;
             }
           });
 
-          if (node.prelude.children.isEmpty()) {
+          if (!hasSelectors) {
             // delete rule from a list
             list.remove(item);
           }
