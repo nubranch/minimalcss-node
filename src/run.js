@@ -36,8 +36,34 @@ const postProcessOptimize = (ast) => {
   const activeAnimationNames = new Set(
     csstree.lexer
       .findAllFragments(ast, 'Type', 'keyframes-name')
-      .map((entry) => csstree.generate(entry.nodes.first()))
+      .map((entry) => {
+        // css-tree API differences between versions: `entry.nodes` may
+        // be a List with .first(), an array, or a single node reference.
+        let firstNode = null;
+
+        if (entry && entry.nodes) {
+          if (typeof entry.nodes.first === 'function') {
+            // Old css-tree: List with .first()
+            firstNode = entry.nodes.first();
+          } else if (Array.isArray(entry.nodes)) {
+            // Newer css-tree: plain array of nodes
+            firstNode = entry.nodes[0];
+          }
+        } else if (entry && entry.node) {
+          // Some versions may expose a single node
+          firstNode = entry.node;
+        }
+
+        if (!firstNode) {
+          // Nothing usable here; skip this fragment
+          return '';
+        }
+
+        return csstree.generate(firstNode);
+      })
+      .filter((name) => !!name) // drop empties
   );
+
 
   // This is the function we use to filter @keyframes atrules out,
   // if its name is not actively used.
