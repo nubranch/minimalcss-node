@@ -185,6 +185,15 @@ const processStylesheet = ({
       return;
     }
 
+    if (finalPath.includes('Flaticon')) {
+      console.log('Rewriting Flaticon URL in stylesheet:', {
+        pageUrl,
+        responseUrl,
+        original: originalRaw,
+        final: finalPath,
+      });
+    }
+
     // Write back, re-quoting if the node is not Raw
     if (value.type !== 'Raw') {
       value.value = `"${finalPath}"`;
