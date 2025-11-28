@@ -133,7 +133,7 @@ const postProcessOptimize = (ast) => {
   });
 };
 
-processStylesheet = ({
+const processStylesheet = ({
   text,
   pageUrl,
   responseUrl,
@@ -196,6 +196,7 @@ processStylesheet = ({
   stylesheetAsts[responseUrl] = ast;
   stylesheetContents[responseUrl] = text;
 };
+
 
 
 const processPage = ({
