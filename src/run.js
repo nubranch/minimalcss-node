@@ -133,6 +133,7 @@ const postProcessOptimize = (ast) => {
   });
 };
 
+
 const processStylesheet = ({
   text,
   pageUrl,
@@ -157,8 +158,11 @@ const processStylesheet = ({
     let path = originalRaw.replace(/^['"]|['"]$/g, '');
 
     // Quick exits for URLs we should not touch
-    if (/^https?:\/\//i.test(path) || /^\/\//.test(path) || /^data:/i.test(path)) {
-      // Already absolute or data URI – leave as is
+    if (
+      /^https?:\/\//i.test(path) || // absolute http/https
+      /^\/\//.test(path) ||         // protocol-relative
+      /^data:/i.test(path)          // data URIs
+    ) {
       return;
     }
 
@@ -181,12 +185,13 @@ const processStylesheet = ({
         finalPath = resolved.href;
       }
     } catch (e) {
-      // If resolution fails for some weird value, best effort: leave it alone
+      // If resolution fails for some weird value, leave it alone
       return;
     }
 
+    // DEBUG: log Flaticon URL rewrites
     if (finalPath.includes('Flaticon')) {
-      console.log('Rewriting Flaticon URL in stylesheet:', {
+      console.log('Rewriting Flaticon URL:', {
         pageUrl,
         responseUrl,
         original: originalRaw,
@@ -205,7 +210,6 @@ const processStylesheet = ({
   stylesheetAsts[responseUrl] = ast;
   stylesheetContents[responseUrl] = text;
 };
-
 
 
 const processPage = ({
@@ -331,36 +335,53 @@ const processPage = ({
       // To build up a map of all downloaded CSS
       page.on('response', (response) => {
         const responseUrl = response.url();
-        const resourceType = response.request().resourceType();
+        const req = response.request();
+        const resourceType = req.resourceType && req.resourceType();
+        const headers = response.headers ? response.headers() : {};
+        const contentTypeRaw =
+          headers['content-type'] || headers['Content-Type'] || '';
+        const contentType = contentTypeRaw.split(';')[0].trim().toLowerCase();
+
         if (response.status() >= 400) {
-          if (options.ignoreRequestErrors) {
-            skippedUrls.add(responseUrl);
-          } else {
-            return safeReject(
-              new Error(`${response.status()} on ${responseUrl}`)
-            );
+          console.log(
+            'Response from %s with status %d',
+            responseUrl,
+            response.status()
+          );
+          if (!options.ignoreRequestErrors) {
+            safeReject(new Error(`${response.status()} on ${responseUrl}`));
           }
-        } else if (response.status() >= 300 && response.status() !== 304) {
-          // If the 'Location' header points to a relative URL,
-          // convert it to an absolute URL.
-          // If it already was an absolute URL, it stays like that.
-          const redirectsTo = new url.URL(
-            response.headers().location,
-            responseUrl
-          ).toString();
-          redirectResponses[responseUrl] = redirectsTo;
-        } else if (resourceType === 'stylesheet') {
-          response.text().then((text) => {
-            processStylesheet({
-              text,
-              pageUrl,
-              responseUrl,
-              stylesheetAsts,
-              stylesheetContents,
-            });
-          });
+          return;
         }
+
+        // Heuristics to decide if this is CSS:
+        const looksLikeCSS =
+          resourceType === 'stylesheet' ||
+          contentType === 'text/css' ||
+          /\.css(\?|$)/i.test(responseUrl);
+
+        if (!looksLikeCSS) {
+          return;
+        }
+
+        // DEBUG: see exactly which CSS files we process
+        if (responseUrl.includes('flaticon')) {
+          console.log('Processing CSS for Flaticon:', responseUrl);
+        }
+
+        response.text().then((text) => {
+          processStylesheet({
+            text,
+            pageUrl,
+            responseUrl,
+            stylesheetAsts,
+            stylesheetContents,
+          });
+        }).catch((err) => {
+          console.error('Error reading CSS response text for', responseUrl, err);
+        });
       });
+
 
       page.on('pageerror', (error) => {
         if (options.ignoreJSErrors) {
