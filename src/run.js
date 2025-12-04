@@ -749,6 +749,20 @@ const minimalcss = async (options) => {
       },
     });
   });
+
+  function reescapeContentStrings(css) {
+    return css.replace(
+      /content\s*:\s*(["'])([^"']*)\1/g,
+      (match, quote, value) => {
+        // Re-escape all non-ASCII chars in the content string
+        const escaped = value.replace(/[\u0080-\uFFFF]/g, ch =>
+          '\\' + ch.charCodeAt(0).toString(16)
+        );
+        return `content:${quote}${escaped}${quote}`;
+      }
+    );
+  }
+
   // Every unique URL in every <link> tag has been checked.
   // We can't simply loop over allHrefs because it might contain
   // entries that *aren't* in stylesheetAsts. For example, a page
@@ -794,7 +808,9 @@ const minimalcss = async (options) => {
   // it too.
   csso.syntax.compress(allCombinedAst, cssoOptions);
   postProcessOptimize(allCombinedAst);
-  const finalCss = csstree.generate(allCombinedAst);
+
+  const finalCss = reescapeContentStrings(csstree.generate(allCombinedAst));
+
   const returned = {
     finalCss,
     stylesheetContents,
